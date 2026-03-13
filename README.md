@@ -76,6 +76,12 @@ quota-watch check
 quota-watch check -c /path/to/config.json
 ```
 
+Output in JSON format:
+
+```bash
+quota-watch check --format json
+```
+
 Exit codes:
 - `0`: All OK
 - `1`: Warnings found

@@ -132,25 +132,39 @@ def format_status_table(statuses: List[QuotaStatus]) -> str:
     """Format quota statuses as a table."""
     if not statuses:
         return "No quotas configured."
-    
+
     lines = []
     header = f"{'NAME':<25} {'STATUS':<10} {'SIZE':<20} {'FILES':<15} {'USAGE':<10}"
     separator = "-" * len(header)
-    
+
     lines.append(header)
     lines.append(separator)
-    
+
     for s in statuses:
         size_str = f"{s.current_size_mb:.1f}/{s.max_size_mb:.0f}MB"
         files_str = f"{s.current_files}" if s.max_files else f"{s.current_files}/-"
         usage_str = f"{s.usage_percent:.1f}%"
-        
+
         lines.append(f"{s.name:<25} {s.status:<10} {size_str:<20} {files_str:<15} {usage_str:<10}")
-        
+
         for alert in s.alerts:
             lines.append(f"  -> {alert}")
-    
+
     return "\n".join(lines)
+
+
+def format_status_json(statuses: List[QuotaStatus]) -> str:
+    """Format quota statuses as JSON."""
+    output = {
+        "quotas": [asdict(s) for s in statuses],
+        "summary": {
+            "total": len(statuses),
+            "critical": sum(1 for s in statuses if s.status == "CRITICAL"),
+            "warning": sum(1 for s in statuses if s.status == "WARNING"),
+            "ok": sum(1 for s in statuses if s.status == "OK")
+        }
+    }
+    return json.dumps(output, indent=2)
 
 
 def check_disk_space(path: str) -> tuple:
@@ -171,21 +185,24 @@ def cmd_check(args):
     if not os.path.exists(args.config):
         print(f"Error: Config file not found: {args.config}", file=sys.stderr)
         sys.exit(1)
-    
+
     configs = load_config(args.config)
     statuses = [check_quota(config) for config in configs]
-    
-    print(format_status_table(statuses))
-    
-    critical_count = sum(1 for s in statuses if s.status == "CRITICAL")
-    warning_count = sum(1 for s in statuses if s.status == "WARNING")
-    
-    print()
-    print(f"Summary: {critical_count} critical, {warning_count} warnings, {len(statuses)} total")
-    
-    if critical_count > 0:
+
+    if args.format == "json":
+        print(format_status_json(statuses))
+    else:
+        print(format_status_table(statuses))
+
+        critical_count = sum(1 for s in statuses if s.status == "CRITICAL")
+        warning_count = sum(1 for s in statuses if s.status == "WARNING")
+
+        print()
+        print(f"Summary: {critical_count} critical, {warning_count} warnings, {len(statuses)} total")
+
+    if any(s.status == "CRITICAL" for s in statuses):
         sys.exit(2)
-    elif warning_count > 0:
+    elif any(s.status == "WARNING" for s in statuses):
         sys.exit(1)
     sys.exit(0)
 
@@ -303,6 +320,8 @@ def main():
     check_parser = subparsers.add_parser('check', help='Check all quota rules')
     check_parser.add_argument('-c', '--config', default='quota_config.json',
                               help='Path to config file (default: quota_config.json)')
+    check_parser.add_argument('-f', '--format', choices=['text', 'json'], default='text',
+                              help='Output format (default: text)')
     check_parser.set_defaults(func=cmd_check)
     
     add_parser = subparsers.add_parser('add', help='Add a new quota rule')
